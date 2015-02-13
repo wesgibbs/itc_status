@@ -36,7 +36,7 @@ module ItunesConnect
     end
 
     def to_s
-      "#{name}||#{version}||#{date}||#{user}||#{status}"
+      %Q|"#{name}" -- #{version} -- #{date} -- #{user} -- #{status}|
     end
   end
 
