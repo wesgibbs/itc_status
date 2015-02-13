@@ -1,5 +1,5 @@
 # Invoke like this:
-# ITC_ACCOUNTNAME='foo@bar.com' ITC_PASSWORD=password REDISTOGO_URL="redis://127.0.0.1:6379" bundle exec ruby itc_status.rb
+# ITC_ACCOUNTNAME='foo@bar.com' ITC_PASSWORD=password REDISTOGO_URL="redis://127.0.0.1:6379" SLACK_WEBHOOK_ENDPOINT="https://hooks.slack.com/services/stuff" bundle exec ruby itc_status.rb
 
 require 'capybara'
 require 'capybara/poltergeist'
@@ -12,7 +12,6 @@ APP_IDS = ["829841726", "940668352", "940668274", "719179248", "552197945"]
 ITC_URL_SIGNIN = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa"
 ITC_URL_STATUS = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStatusHistory?adamId=APPID&versionString=latest"
 ITC_URL_VERSION = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStorePreview?adamId=APPID&versionString=latest"
-SLACK_WEBHOOK_ENDPOINT = "https://hooks.slack.com/services/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"
 
 module ItunesConnect
   class AppStatus
@@ -41,12 +40,13 @@ module ItunesConnect
   end
 
   class Scraper
-    attr_reader :itc_accountname, :itc_password, :redistogo_url
+    attr_reader :itc_accountname, :itc_password, :redistogo_url, :slack_webhook
 
     def initialize
       @itc_accountname = ENV['ITC_ACCOUNTNAME']
       @itc_password    = ENV['ITC_PASSWORD']
       @redistogo_url   = ENV['REDISTOGO_URL']
+      @slack_webhook   = ENV['SLACK_WEBHOOK_ENDPOINT']
 
       Capybara.register_driver :poltergeist do |app|
         Capybara::Poltergeist::Driver.new(app, :phantomjs_options => ['--debug=no', '--load-images=no', '--ignore-ssl-errors=yes', '--ssl-protocol=TLSv1'], :debug => false, :js_errors => false)
@@ -77,7 +77,7 @@ module ItunesConnect
     end
 
     def post_to_slack(app_status)
-      Faraday.post(SLACK_WEBHOOK_ENDPOINT, payload: {text: app_status.summary}.to_json)
+      Faraday.post(slack_webhook, payload: {text: app_status.summary}.to_json)
     end
 
     def redis
