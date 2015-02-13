@@ -1,11 +1,21 @@
 # Invoke like this:
 # ITC_ACCOUNTNAME='foo@bar.com' ITC_PASSWORD=password REDISTOGO_URL="redis://127.0.0.1:6379" bundle exec ruby itc_status.rb
 
+require 'capybara'
+require 'capybara/poltergeist'
+require 'digest/md5'
+require 'faraday'
+require 'pry-byebug'
+require 'redis'
+
+APP_IDS = ["829841726", "940668352", "940668274", "719179248", "552197945"]
+ITC_URL_SIGNIN = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa"
+ITC_URL_STATUS = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStatusHistory?adamId=APPID&versionString=latest"
+ITC_URL_VERSION = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStorePreview?adamId=APPID&versionString=latest"
+SLACK_WEBHOOK_ENDPOINT = "https://hooks.slack.com/services/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"
+
 module ItunesConnect
-
   class AppStatus
-    require 'digest/md5'
-
     attr_accessor :date, :id, :name, :status, :user, :version
 
     def initialize(values = {})
@@ -31,18 +41,6 @@ module ItunesConnect
   end
 
   class Scraper
-    require 'capybara'
-    require 'capybara/poltergeist'
-    require 'faraday'
-    require 'pry-byebug'
-    require 'redis'
-
-    APP_IDS = ["829841726", "940668352", "940668274", "719179248", "552197945"]
-    ITC_SIGNIN_URL = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa"
-    SLACK_WEBHOOK_ENDPOINT = "https://hooks.slack.com/services/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"
-    STATUS_PAGE_URL = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStatusHistory?adamId=APPID&versionString=latest"
-    VERSION_PAGE_URL = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStorePreview?adamId=APPID&versionString=latest"
-
     attr_reader :itc_accountname, :itc_password, :redistogo_url
 
     def initialize
@@ -68,11 +66,11 @@ module ItunesConnect
     private
 
     def build_app_status(app_id)
-      session.visit STATUS_PAGE_URL.gsub("APPID", app_id)
+      session.visit ITC_URL_STATUS.gsub("APPID", app_id)
       date = session.first("#version-state-history-list table tr.even .versionStateHistory-col-0 p").text
       user = session.first("#version-state-history-list table tr.even .versionStateHistory-col-1 p").text
       status = session.first("#version-state-history-list table tr.even .versionStateHistory-col-2 p").text
-      session.visit VERSION_PAGE_URL.gsub("APPID", app_id)
+      session.visit ITC_URL_VERSION.gsub("APPID", app_id)
       name = session.find("label", text: "App Name").first(:xpath, ".//..").find("span").text
       version = session.find("label", text: "Version").first(:xpath, ".//..").find("span").text
       ItunesConnect::AppStatus.new(date: date, id: app_id, name: name, status: status, user: user, version: version)
@@ -96,7 +94,7 @@ module ItunesConnect
     end
 
     def signin
-      session.visit ITC_SIGNIN_URL
+      session.visit ITC_URL_SIGNIN
       session.fill_in("theAccountName", with: itc_accountname)
       session.fill_in("theAccountPW", with: itc_password)
       session.find("body.signin a.btn-signin").click
