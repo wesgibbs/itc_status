@@ -17,16 +17,16 @@ module ItunesConnect
       @version = values[:version]
     end
 
-    def hash
-      Digest::MD5.hexdigest to_s
+    def digest
+      Digest::MD5.hexdigest "#{date}#{user}#{status}"
     end
 
     def summary
-      "*#{name}* status is now *#{status}*."
+      "*#{name} #{version}* status is now *#{status}*."
     end
 
     def to_s
-      "#{name}\t#{date}\t#{user}\t#{status}"
+      "#{name}||#{version}||#{date}||#{user}||#{status}"
     end
   end
 
@@ -37,10 +37,11 @@ module ItunesConnect
     require 'pry-byebug'
     require 'redis'
 
-    APP_IDS = {"CareZone" => "829841726", "AARP Rx" => "940668352", "AARP Caregiving" => "940668274", "Senior" => "719179248", "Family" => "552197945"}
+    APP_IDS = ["829841726", "940668352", "940668274", "719179248", "552197945"]
     ITC_SIGNIN_URL = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa"
     SLACK_WEBHOOK_ENDPOINT = "https://hooks.slack.com/services/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"
     STATUS_PAGE_URL = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStatusHistory?adamId=APPID&versionString=latest"
+    VERSION_PAGE_URL = "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/LCAppPage/viewStorePreview?adamId=APPID&versionString=latest"
 
     attr_reader :itc_accountname, :itc_password, :redistogo_url
 
@@ -56,8 +57,8 @@ module ItunesConnect
 
     def scrape
       signin
-      APP_IDS.each do |app_name, app_id|
-        app_status = build_app_status app_name, app_id
+      APP_IDS.each do |app_id|
+        app_status = build_app_status app_id
         if update_redis app_status
           post_to_slack app_status
         end
@@ -66,12 +67,15 @@ module ItunesConnect
 
     private
 
-    def build_app_status(app_name, app_id)
+    def build_app_status(app_id)
       session.visit STATUS_PAGE_URL.gsub("APPID", app_id)
       date = session.first("#version-state-history-list table tr.even .versionStateHistory-col-0 p").text
       user = session.first("#version-state-history-list table tr.even .versionStateHistory-col-1 p").text
       status = session.first("#version-state-history-list table tr.even .versionStateHistory-col-2 p").text
-      ItunesConnect::AppStatus.new(name: app_name, date: date, id: app_id, status: status, user: user)
+      session.visit VERSION_PAGE_URL.gsub("APPID", app_id)
+      name = session.find("label", text: "App Name").first(:xpath, ".//..").find("span").text
+      version = session.find("label", text: "Version").first(:xpath, ".//..").find("span").text
+      ItunesConnect::AppStatus.new(date: date, id: app_id, name: name, status: status, user: user, version: version)
     end
 
     def post_to_slack(app_status)
@@ -100,7 +104,7 @@ module ItunesConnect
 
     def update_redis(app_status)
       previous_status_digest = redis.get "APP_ID_#{app_status.id}"
-      new_status_digest = app_status.hash
+      new_status_digest = app_status.digest
       if previous_status_digest == new_status_digest
         puts "Status for APP_ID_#{app_status.id} unchanged: #{app_status}."
         false
